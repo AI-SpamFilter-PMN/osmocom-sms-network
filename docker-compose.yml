@@ -1,0 +1,112 @@
+networks:
+  osmocom_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+
+services:
+  osmo-stp:
+    build: 
+      context: ./osmo-stp
+    container_name: osmo-stp
+    networks:
+      osmocom_net:
+        ipv4_address: 172.25.0.2
+    volumes:
+      - ./config/osmo-stp.cfg:/etc/osmocom/osmo-stp.cfg
+    command: osmo-stp -c /etc/osmocom/osmo-stp.cfg
+
+  osmo-hlr:
+    build: 
+      context: ./osmo-hlr
+    container_name: osmo-hlr
+    depends_on:
+      - osmo-stp
+    networks:
+      osmocom_net:
+        ipv4_address: 172.25.0.3
+    volumes:
+      - ./config/osmo-hlr.cfg:/etc/osmocom/osmo-hlr.cfg
+      - ./data:/var/lib/osmocom
+    command: osmo-hlr -c /etc/osmocom/osmo-hlr.cfg
+
+  osmo-msc:
+    build: 
+      context: ./osmo-msc
+    container_name: osmo-msc
+    depends_on:
+      - osmo-stp
+      - osmo-hlr
+    ports:
+      - "2775:2775" 
+    networks:
+      osmocom_net:
+        ipv4_address: 172.25.0.4
+    volumes:
+      - ./config/osmo-msc.cfg:/etc/osmocom/osmo-msc.cfg
+    command: osmo-msc -c /etc/osmocom/osmo-msc.cfg
+
+  osmo-bsc:
+    build: 
+      context: ./osmo-bsc
+    container_name: osmo-bsc
+    depends_on:
+      - osmo-stp
+      - osmo-msc
+    networks:
+      osmocom_net:
+        ipv4_address: 172.25.0.5
+    volumes:
+      - ./config/osmo-bsc.cfg:/etc/osmocom/osmo-bsc.cfg
+    command: osmo-bsc -c /etc/osmocom/osmo-bsc.cfg
+
+  osmo-bts:
+    build: 
+      context: ./osmo-bts
+    container_name: osmo-bts
+    depends_on:
+      - osmo-bsc
+    networks:
+      osmocom_net:
+        ipv4_address: 172.25.0.6
+    volumes:
+      - ./config/osmo-bts.cfg:/etc/osmocom/osmo-bts.cfg
+      - shared-tmp:/tmp
+    command: osmo-bts-virtual -c /etc/osmocom/osmo-bts.cfg
+    
+  virtphy:
+    build:
+      context: ./osmo-mobile
+    container_name: virtphy
+    network_mode: "service:osmo-bts"
+    volumes:
+      - shared-tmp:/tmp
+    command: /opt/osmocom-bb/src/host/virt_phy/src/virtphy
+    depends_on:
+      - osmo-bts 
+      
+  osmo-mobile:
+    build:
+      context: ./osmo-mobile
+    container_name: osmo-mobile
+    volumes:
+      - ./config/mobile.cfg:/root/.osmocom/bb/mobile.cfg
+      - ./data/mobile:/root/.osmocom/bb
+      - shared-tmp:/tmp
+    command: sh -c "sleep 3 && /opt/osmocom-bb/src/host/layer23/src/mobile/mobile -c /root/.osmocom/bb/mobile.cfg"
+    depends_on:
+      - virtphy
+  osmo-mobile-2:
+    build:
+      context: ./osmo-mobile
+    container_name: osmo-mobile-2
+    volumes:
+      - ./config/mobile2.cfg:/root/.osmocom/bb/mobile.cfg
+      - ./data/mobile-2:/root/.osmocom/bb
+      - shared-tmp:/tmp
+    command: sh -c "sleep 3 && /opt/osmocom-bb/src/host/layer23/src/mobile/mobile -c /root/.osmocom/bb/mobile.cfg"
+    depends_on:
+      - virtphy
+volumes:
+  shared-tmp:
